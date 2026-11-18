@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<title>Pill Dispenser</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+<script defer src="{{ url_for('static', filename='app.js') }}"></script>
+<script defer src="{{ url_for('static', filename='alpine.min.js') }}"></script>
+</head>
+<body x-data="dispenser()" x-init="init()" x-cloak>
+
+<header>
+  <div class="clock" x-text="clock"></div>
+  <div class="status" :class="{err: offline}" x-text="offline ? 'Connection lost…' : (state.busy ? 'Dispensing…' : 'Ready')"></div>
+  <span class="sim" x-show="state.simulation">SIMULATION</span>
+</header>
+
+<main>
+  <!-- HOME -->
+  <section x-show="tab==='home'">
+    <div class="card next">
+      <div class="label">Next dose</div>
+      <template x-if="state.next">
+        <div class="big">
+          <span x-text="nextLabel()"></span>
+          <span class="dot" :style="{background: pill(state.next.pill).color}"></span>
+          <span x-text="pill(state.next.pill).name"></span>
+        </div>
+      </template>
+      <div class="big muted" x-show="!state.next">Nothing scheduled</div>
+    </div>
+    <div class="grid3">
+      <template x-for="p in state.pills" :key="p.id">
+        <button class="pillbtn" :style="{'--c': p.color}"
+                :disabled="state.busy || p.remaining <= 0"
+                @click="ask('Dispense ' + p.name + '?', 'One ' + p.name + ' pill will be dispensed now.', 'Dispense', () => dispense(p.id))">
+          <span class="name" x-text="p.name"></span>
+          <span class="action">Dispense Now</span>
+          <span class="left" :class="{low: p.low}" x-text="p.remaining <= 0 ? 'EMPTY' : p.remaining + ' left'"></span>
+        </button>
+      </template>
+    </div>
+  </section>
+
+  <!-- SCHEDULE -->
+  <section x-show="tab==='schedule'">
+    <button class="primary wide" @click="openEditor(null)">+ Add time</button>
+    <p class="muted center" x-show="!state.schedule.length">No times yet.</p>
+    <template x-for="e in state.schedule" :key="e.id">
+      <div class="row" :class="{off: !e.enabled}">
+        <div class="time" x-text="e.time"></div>
+        <div class="who"><span class="dot" :style="{background: pill(e.pill).color}"></span><span x-text="pill(e.pill).name"></span></div>
+        <button class="small" @click="toggle(e)" x-text="e.enabled ? 'On' : 'Off'" :class="{on: e.enabled}"></button>
+        <button class="small" @click="openEditor(e)">Edit</button>
+        <button class="small danger" @click="ask('Delete ' + e.time + '?', pill(e.pill).name + ' at ' + e.time + ' will be removed.', 'Delete', () => remove(e))">Delete</button>
+      </div>
+    </template>
+  </section>
+
+  <!-- HISTORY -->
+  <section x-show="tab==='history'">
+    <p class="muted center" x-show="!history.length">Nothing dispensed yet.</p>
+    <template x-for="h in history" :key="h.ts + h.pill">
+      <div class="row">
+        <div class="time small-time" x-text="fmt(h.ts)"></div>
+        <div class="who"><span class="dot" :style="{background: pill(h.pill).color}"></span><span x-text="h.name"></span></div>
+        <div class="tag" :class="h.status" x-text="statusText(h)"></div>
+      </div>
+    </template>
+  </section>
+
+  <!-- SETTINGS -->
+  <section x-show="tab==='settings'">
+    <template x-for="p in state.pills" :key="p.id">
+      <div class="card setting" :style="{'--c': p.color}">
+        <div class="who"><span class="dot" :style="{background: p.color}"></span><span class="name" x-text="p.name"></span></div>
+        <div class="count" :class="{low: p.low}"><span x-text="p.remaining"></span> / <span x-text="p.capacity"></span></div>
+        <div class="bar"><div :style="{width: Math.min(100, 100 * p.remaining / p.capacity) + '%'}"></div></div>
+        <div class="btns">
+          <button class="small" @click="setCount(p, p.remaining - 1)">−1</button>
+          <button class="small" @click="setCount(p, p.remaining + 1)">+1</button>
+          <button class="primary" @click="ask('Refill ' + p.name + '?', 'Counter will be set to ' + p.capacity + '. Only confirm after the hopper is really full.', 'Refill', () => setCount(p, p.capacity))">Refill</button>
+        </div>
+      </div>
+    </template>
+    <p class="muted center">Class prototype. Not for real medication.</p>
+  </section>
+</main>
+
+<nav>
+  <template x-for="t in [['home','Home'],['schedule','Schedule'],['history','History'],['settings','Settings']]" :key="t[0]">
+    <button :class="{active: tab===t[0]}" @click="go(t[0])" x-text="t[1]"></button>
+  </template>
+</nav>
+
+<!-- schedule editor -->
+<div class="overlay" x-show="editor" @click.self="editor=null">
+  <div class="modal" x-show="editor">
+    <h2 x-text="editor && editor.id ? 'Edit time' : 'New time'"></h2>
+    <template x-if="editor">
+      <div>
+        <div class="stepper">
+          <div><button @click="step('h', 1)">▲</button><div class="num" x-text="pad(editor.h)"></div><button @click="step('h', -1)">▼</button></div>
+          <div class="colon">:</div>
+          <div><button @click="step('m', 5)">▲</button><div class="num" x-text="pad(editor.m)"></div><button @click="step('m', -5)">▼</button></div>
+        </div>
+        <div class="choose">
+          <template x-for="p in state.pills" :key="p.id">
+            <button :style="{'--c': p.color}" :class="{sel: editor.pill===p.id}" @click="editor.pill=p.id" x-text="p.name"></button>
+          </template>
+        </div>
+        <div class="btns">
+          <button @click="editor=null">Cancel</button>
+          <button class="primary" @click="saveEditor()">Save</button>
+        </div>
+      </div>
+    </template>
+  </div>
+</div>
+
+<!-- confirm -->
+<div class="overlay" x-show="confirm" @click.self="confirm=null">
+  <div class="modal" x-show="confirm">
+    <h2 x-text="confirm && confirm.title"></h2>
+    <p x-text="confirm && confirm.text"></p>
+    <div class="btns">
+      <button @click="confirm=null">Cancel</button>
+      <button class="primary" @click="confirmOk()" x-text="confirm && confirm.ok"></button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" :class="toast.kind" x-show="toast.text" x-text="toast.text" x-transition></div>
+</body>
+</html>
