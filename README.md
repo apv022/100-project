@@ -75,6 +75,22 @@ Open http://localhost:5000. Run the tests with `PILL_SIMULATION=1 venv/bin/pytho
 | `cad/` | 3D print files and design brief |
 | `tests/` | unit tests |
 
+## Planned: OCR prescription scanning
+
+*Not implemented yet. This is the design for a future feature.*
+
+Goal: point a camera at a prescription label and pre-fill a schedule entry (pill name, doses per day, times), instead of typing it in.
+
+- **Hardware:** a Raspberry Pi Camera Module or any USB webcam. Good lighting and a plain background matter more than resolution.
+- **OCR engine:** Tesseract (`apt install tesseract-ocr`, with `pytesseract` and `opencv-python-headless` in `requirements.txt`). It runs fully offline on the Pi 3 B+, so the no-internet rule still holds. Expect a few seconds per scan.
+- **Flow:** a *Scan label* button on the Schedule screen takes a photo, then the app crops it, converts to greyscale, thresholds it and runs OCR. Text is parsed for the drug name and directions such as "1 tablet twice daily" or "every 8 hours". The result goes to a review screen.
+- **Mapping to hoppers:** the scanned drug name is matched against the pill names in `config.py` and the user picks which hopper (A, B or C) it belongs to. Directions are turned into suggested times: once daily 08:00, twice daily 08:00 and 20:00, three times daily 08:00, 14:00 and 20:00.
+- **Human confirmation is mandatory:** OCR misreads often, so nothing is ever scheduled automatically. The user sees the scanned text next to the suggested entries, edits them, and taps *Save*. A low-confidence scan is rejected with a "retake photo" message.
+- **Code layout:** a new `app/ocr.py` (capture, preprocess, parse) and one endpoint, `POST /api/scan`, returning the raw text plus suggested entries. Scan images are deleted right after processing and never stored, because prescriptions are private data.
+- **Limits:** printed labels only, not handwriting. It cannot check that the right pill is in the hopper.
+
+The safety note above still applies: this is a class prototype and OCR output must never be trusted for real medication.
+
 ## Troubleshooting
 
 - **Servo jitters or does nothing:** `systemctl status pigpiod`; start it with `sudo systemctl enable --now pigpiod`. Check the common ground.
