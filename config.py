@@ -20,7 +20,7 @@ _env_sim = os.environ.get("PILL_SIMULATION")
 SIMULATION = (not _on_raspberry_pi()) if _env_sim is None else _env_sim == "1"
 
 # Web server. Kiosk browser points at http://localhost:PORT
-HOST = "0.0.0.0"          # reachable from a phone on the same network
+HOST = os.environ.get("PILL_HOST", "127.0.0.1")  # localhost only; expose via `tailscale serve`, not 0.0.0.0
 PORT = int(os.environ.get("PILL_PORT", "5000"))
 
 # One block per pill / hopper. Each unit has its own servo.

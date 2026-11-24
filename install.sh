@@ -51,13 +51,12 @@ sudo raspi-config nonint do_blanking 1 || warn "Could not turn off screen blanki
 
 # 7. Summary
 sleep 2
-IP="$(hostname -I | awk '{print $1}')"
 echo
 echo "================ Install summary ================"
 echo "Installed: system packages, pigpiod, Python venv, pill-dispenser service, kiosk autostart"
 if systemctl is-active --quiet pill-dispenser; then echo "App service: RUNNING"; else echo "App service: NOT running (see: journalctl -u pill-dispenser -e)"; fi
 echo "Address on the Pi:   http://localhost:$PORT"
-[ -n "$IP" ] && echo "Address on your LAN: http://$IP:$PORT"
+echo "The app listens on localhost only. For remote access: sudo tailscale serve --bg $PORT"
 for w in "${WARNINGS[@]:-}"; do [ -n "$w" ] && echo "Warning: $w"; done
 echo
 echo "Next: reboot (sudo reboot) to start the full-screen kiosk."

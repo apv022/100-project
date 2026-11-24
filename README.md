@@ -15,7 +15,7 @@ git clone <this repo's URL> pill-dispenser && cd pill-dispenser
 ./install.sh
 ```
 
-Then `sudo reboot`. The app starts on boot and Chromium opens full-screen on the touchscreen. From a phone on the same network, open the address printed at the end of the install.
+Then `sudo reboot`. The app starts on boot and Chromium opens full-screen on the touchscreen. The app listens on `127.0.0.1` only. To reach it from a phone or laptop, see *Remote access* below.
 
 ## Update
 
@@ -74,6 +74,20 @@ Open http://localhost:5000. Run the tests with `PILL_SIMULATION=1 venv/bin/pytho
 | `deploy/` | systemd unit, kiosk launcher, autostart entry |
 | `cad/` | 3D print files and design brief |
 | `tests/` | unit tests |
+
+## Remote access (Tailscale) and headless Pis
+
+The app binds to `127.0.0.1` (set `PILL_HOST` to change it, not recommended). Do not expose it on `0.0.0.0` or the public internet; there is no login.
+
+With Tailscale installed on the Pi, share it to your tailnet over HTTPS:
+
+```bash
+sudo tailscale serve --bg 5000
+```
+
+Then open `https://<pi-name>.<your-tailnet>.ts.net/` from any device on the tailnet. Check or undo with `sudo tailscale serve status` and `sudo tailscale serve reset`. Never use `tailscale funnel`, which makes it public. A 502 means serve works but the app is not running (`systemctl status pill-dispenser`). If the browser cannot resolve `*.ts.net`, turn off Secure DNS / DoH in the browser.
+
+If the Pi is headless (no touchscreen yet), `install.sh` still works; the kiosk autostart entry is simply never triggered, and you use the app through the tailnet URL. `./install.sh` and `./update.sh` need SSH access, so run them over `ssh` via the tailnet. Keep ufw's default-deny incoming rule; no extra inbound port is needed because `tailscale serve` handles it.
 
 ## Planned: OCR prescription scanning
 
