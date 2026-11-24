@@ -72,7 +72,7 @@ Open http://localhost:5000. Run the tests with `PILL_SIMULATION=1 venv/bin/pytho
 | `app/templates`, `app/static` | touchscreen UI (Alpine JS vendored locally, fully offline) |
 | `data/` | `schedule.json`, `history.json`, `inventory.json`, created on first run, git-ignored |
 | `deploy/` | systemd unit, kiosk launcher, autostart entry |
-| `cad/` | 3D print files and design brief |
+| `cad/` | parametric OpenSCAD source, STLs and previews (see `cad/README.md`) |
 | `tests/` | unit tests |
 
 ## Remote access (Tailscale) and headless Pis

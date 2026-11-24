@@ -26,15 +26,17 @@ PORT = int(os.environ.get("PILL_PORT", "5000"))
 # One block per pill / hopper. Each unit has its own servo.
 #   pin           BCM GPIO number of the servo signal wire (pigpio: any GPIO works)
 #   open_angle    disc angle where the pocket sits over the exit hole (pill drops)
+#   (defaults match cad/params.scad: 120 deg throw; units A and B turn one way, C the
+#    other. Tune on the bench; if a disc moves away from its exit hole, swap the pair.)
 #   closed_angle  disc angle where the pocket sits under the hopper (loading)
 #   capacity      how many pills a full hopper holds (used by the Refill button)
 PILLS = [
     {"id": "pill1", "name": "Pill A", "color": "#ff6b6b",
-     "pin": 18, "open_angle": 90, "closed_angle": 0, "capacity": 30},
+     "pin": 18, "open_angle": 0, "closed_angle": 120, "capacity": 30},
     {"id": "pill2", "name": "Pill B", "color": "#4dabf7",
-     "pin": 12, "open_angle": 90, "closed_angle": 0, "capacity": 30},
+     "pin": 12, "open_angle": 0, "closed_angle": 120, "capacity": 30},
     {"id": "pill3", "name": "Pill C", "color": "#ffd43b",
-     "pin": 13, "open_angle": 90, "closed_angle": 0, "capacity": 30},
+     "pin": 13, "open_angle": 120, "closed_angle": 0, "capacity": 30},
 ]
 
 LOW_STOCK_THRESHOLD = 5   # show a warning at or below this many pills
