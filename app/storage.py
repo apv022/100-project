@@ -69,7 +69,7 @@ def add_history(entry):
 
 
 def get_inventory():
-    """Pills remaining per hopper. New hoppers start full."""
+    """Pills remaining per container. New containers start full."""
     inv = read("inventory", {})
     for p in config.PILLS:
         inv.setdefault(p["id"], p["capacity"])

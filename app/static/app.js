@@ -1,7 +1,7 @@
 function dispenser() {
   return {
     tab: 'home',
-    state: { pills: [], schedule: [], next: null, busy: null, simulation: false },
+    state: { pills: [], schedule: [], next: null, busy: null, driver: '' },
     history: [],
     clock: '',
     offline: false,
@@ -129,7 +129,8 @@ function dispenser() {
     statusText(h) {
       const how = h.source === 'schedule' ? 'Scheduled' : 'Manual';
       if (h.status === 'ok') return how;
-      if (h.status === 'empty') return 'Hopper empty';
+      if (h.status === 'empty') return 'Container empty';
+      if (h.status === 'missed') return 'Nothing came out';
       return 'Error';
     },
   };

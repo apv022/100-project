@@ -60,7 +60,7 @@ nav button.active { background: var(--text); color: #000; border-color: var(--te
 .who { display: flex; align-items: center; gap: 10px; flex: 1; font-weight: 700; }
 .tag { font-size: 20px; color: var(--muted); }
 .tag.empty { color: var(--warn); }
-.tag.error { color: var(--danger); }
+.tag.error, .tag.missed { color: var(--danger); }
 
 .setting { display: grid; grid-template-columns: 1fr auto; gap: 8px 16px; align-items: center; }
 .setting .name { font-size: 30px; font-weight: 800; }
@@ -91,6 +91,8 @@ nav button.active { background: var(--text); color: #000; border-color: var(--te
 
 @media (max-width: 640px) {
   body { font-size: 20px; }
+  .clock { font-size: 28px; white-space: nowrap; }
+  header { gap: 12px; }
   .grid3 { grid-template-columns: 1fr; }
   .pillbtn { min-height: 120px; }
   .row { flex-wrap: wrap; }

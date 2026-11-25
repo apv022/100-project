@@ -13,7 +13,7 @@
 <header>
   <div class="clock" x-text="clock"></div>
   <div class="status" :class="{err: offline}" x-text="offline ? 'Connection lost…' : (state.busy ? 'Dispensing…' : 'Ready')"></div>
-  <span class="sim" x-show="state.simulation">SIMULATION</span>
+  <span class="sim" x-show="state.driver === 'sim'">SIMULATION</span>
 </header>
 
 <main>
@@ -80,7 +80,7 @@
         <div class="btns">
           <button class="small" @click="setCount(p, p.remaining - 1)">−1</button>
           <button class="small" @click="setCount(p, p.remaining + 1)">+1</button>
-          <button class="primary" @click="ask('Refill ' + p.name + '?', 'Counter will be set to ' + p.capacity + '. Only confirm after the hopper is really full.', 'Refill', () => setCount(p, p.capacity))">Refill</button>
+          <button class="primary" @click="ask('Refill ' + p.name + '?', 'Counter will be set to ' + p.capacity + '. Only confirm after the container is really full.', 'Refill', () => setCount(p, p.capacity))">Refill</button>
         </div>
       </div>
     </template>

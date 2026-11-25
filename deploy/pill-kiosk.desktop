@@ -1,5 +1,0 @@
-[Desktop Entry]
-Type=Application
-Name=Pill Dispenser Kiosk
-Exec=@REPO@/deploy/kiosk.sh
-X-GNOME-Autostart-enabled=true

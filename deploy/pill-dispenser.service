@@ -1,12 +1,12 @@
 [Unit]
 Description=Pill dispenser web app and scheduler
-After=network.target pigpiod.service
-Wants=pigpiod.service
+After=network.target
 
 [Service]
 Type=simple
 User=@USER@
 WorkingDirectory=@REPO@
+Environment=PILL_PORT=@PORT@
 ExecStart=@REPO@/venv/bin/python -m app.app
 Restart=always
 RestartSec=3

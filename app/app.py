@@ -51,7 +51,7 @@ def create_app(start_scheduler=True):
         now = datetime.now()
         sched = sorted(storage.get_schedule(), key=lambda e: e["time"])
         return jsonify(
-            simulation=config.SIMULATION,
+            driver=config.DRIVER,
             now=now.isoformat(timespec="seconds"),
             busy=dispenser.active,
             pills=_pill_view(),
@@ -126,5 +126,5 @@ def create_app(start_scheduler=True):
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s: %(message)s")
     logging.getLogger("werkzeug").setLevel(logging.WARNING)
-    logging.info("Pill dispenser on port %s (simulation=%s)", config.PORT, config.SIMULATION)
+    logging.info("Pill dispenser on http://%s:%s (driver=%s)", config.HOST, config.PORT, config.DRIVER)
     create_app().run(host=config.HOST, port=config.PORT, threaded=True)

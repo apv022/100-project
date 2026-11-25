@@ -1,63 +1,57 @@
 #!/usr/bin/env bash
-# One-shot installer for the pill dispenser. Safe to run more than once.
+# Install (or update) the pill dispenser web app on a Raspberry Pi.
+# Safe to run again: after `git pull`, just run ./install.sh to update.
 set -euo pipefail
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SERVICE=pill-dispenser
+PORT="${PILL_PORT:-5000}"
 fail() { echo; echo "ERROR: $*" >&2; exit 1; }
-warn() { echo "WARNING: $*" >&2; WARNINGS+=("$*"); }
-WARNINGS=()
 
-# 1. Sanity checks
-[ "$(id -u)" -ne 0 ] || fail "Run as your normal user (not root / not with sudo). The script calls sudo itself."
+# 1. Checks
+[ "$(id -u)" -ne 0 ] || fail "Run as your normal user, not with sudo. The script calls sudo itself."
 if [ "${FORCE:-0}" != "1" ] && ! grep -qi "raspberry pi" /proc/device-tree/model 2>/dev/null; then
   fail "This does not look like a Raspberry Pi. (To install anyway: FORCE=1 ./install.sh)"
 fi
 command -v sudo >/dev/null || fail "sudo is required."
 
-PORT="$(grep -E '^PORT' "$REPO/config.py" | grep -oE '"[0-9]+"' | tr -d '"' | head -1)"; PORT="${PORT:-5000}"
-
 # 2. System packages
 echo "==> Installing system packages"
-sudo apt-get update
-if apt-cache show chromium >/dev/null 2>&1; then CHROMIUM=chromium; else CHROMIUM=chromium-browser; fi
-sudo apt-get install -y python3-venv python3-pip pigpio python3-pigpio "$CHROMIUM" unclutter git curl \
-  || fail "apt install failed. Check your internet connection and run ./install.sh again."
+sudo apt-get update -qq
+sudo apt-get install -y -qq python3-venv python3-pip curl \
+  || fail "apt install failed. Check the internet connection and run ./install.sh again."
 
-# 3. pigpiod (smooth servo signals)
-echo "==> Enabling pigpiod"
-sudo systemctl enable --now pigpiod || warn "Could not start pigpiod. Servos will not move until it runs (sudo systemctl status pigpiod)."
-
-# 4. Python virtual environment
-echo "==> Creating Python environment"
-python3 -m venv --system-site-packages "$REPO/venv"
-"$REPO/venv/bin/pip" install --upgrade pip
-"$REPO/venv/bin/pip" install -r "$REPO/requirements.txt" || fail "pip install failed. Check your internet connection and run ./install.sh again."
+# 3. Python environment
+echo "==> Setting up Python environment"
+[ -x "$REPO/venv/bin/python" ] || python3 -m venv "$REPO/venv"
+"$REPO/venv/bin/pip" install -q --upgrade pip
+"$REPO/venv/bin/pip" install -q -r "$REPO/requirements.txt" \
+  || fail "pip install failed. Check the internet connection and run ./install.sh again."
 mkdir -p "$REPO/data"
 
-# 5. systemd service for the app
-echo "==> Installing the app service"
-sed -e "s|@USER@|$(id -un)|g" -e "s|@REPO@|$REPO|g" "$REPO/deploy/pill-dispenser.service" \
-  | sudo tee /etc/systemd/system/pill-dispenser.service >/dev/null
+# 4. systemd service (starts on boot, restarts on crash)
+echo "==> Installing the $SERVICE service"
+sed -e "s|@USER@|$(id -un)|g" -e "s|@REPO@|$REPO|g" -e "s|@PORT@|$PORT|g" \
+  "$REPO/deploy/pill-dispenser.service" | sudo tee /etc/systemd/system/$SERVICE.service >/dev/null
 sudo systemctl daemon-reload
-sudo systemctl enable pill-dispenser
-sudo systemctl restart pill-dispenser
+sudo systemctl enable -q $SERVICE
+sudo systemctl restart $SERVICE
 
-# 6. Kiosk browser at desktop login, no screen blanking
-echo "==> Setting up kiosk mode"
-chmod +x "$REPO/deploy/kiosk.sh" "$REPO/install.sh" "$REPO/update.sh"
-mkdir -p "$HOME/.config/autostart"
-sed "s|@REPO@|$REPO|g" "$REPO/deploy/pill-kiosk.desktop" > "$HOME/.config/autostart/pill-kiosk.desktop"
-sudo raspi-config nonint do_blanking 1 || warn "Could not turn off screen blanking (Raspberry Pi Configuration > Display > Screen Blanking)."
+# 5. Check it answers
+echo "==> Waiting for the app"
+ok=0
+for _ in $(seq 1 20); do
+  if curl -fs -o /dev/null "http://127.0.0.1:$PORT/api/state"; then ok=1; break; fi
+  sleep 1
+done
 
-# 7. Summary
-sleep 2
 echo
-echo "================ Install summary ================"
-echo "Installed: system packages, pigpiod, Python venv, pill-dispenser service, kiosk autostart"
-if systemctl is-active --quiet pill-dispenser; then echo "App service: RUNNING"; else echo "App service: NOT running (see: journalctl -u pill-dispenser -e)"; fi
-echo "Address on the Pi:   http://localhost:$PORT"
-echo "The app listens on localhost only. For remote access: sudo tailscale serve --bg $PORT"
-for w in "${WARNINGS[@]:-}"; do [ -n "$w" ] && echo "Warning: $w"; done
-echo
-echo "Next: reboot (sudo reboot) to start the full-screen kiosk."
-echo "If something failed: see Troubleshooting in README.md, or run ./install.sh again."
+echo "================ Summary ================"
+if [ $ok = 1 ]; then
+  echo "App is RUNNING on http://127.0.0.1:$PORT (localhost only)"
+else
+  echo "App did NOT respond. See: journalctl -u $SERVICE -e"
+fi
+echo "Phone access over Tailscale (if not set up yet): sudo tailscale serve --bg $PORT"
+echo "Update later: git pull && ./install.sh"
+[ $ok = 1 ] || exit 1

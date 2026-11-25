@@ -3,14 +3,16 @@ import tempfile
 import unittest
 from datetime import datetime
 
-os.environ["PILL_SIMULATION"] = "1"
+os.environ["PILL_DRIVER"] = "sim"
 import config  # noqa: E402
 
 config.DATA_DIR = tempfile.mkdtemp()
-config.SERVO_MOVE_TIME = config.SERVO_HOLD_TIME = 0.01
+config.SIM_DISPENSE_SECONDS = 0.01
 config.PAUSE_BETWEEN_PILLS = 0.01
 
 from app import scheduler, storage  # noqa: E402
+from app.dispenser import Dispenser  # noqa: E402
+from app.hardware import DispenseError, Driver  # noqa: E402
 from app.app import create_app  # noqa: E402
 
 
@@ -61,6 +63,18 @@ class AppTest(unittest.TestCase):
         self.assertEqual(scheduler.run_due(now), 0)  # not again today
         inv = storage.get_inventory()
         self.assertEqual((inv["pill1"], inv["pill2"], inv["pill3"]), (29, 30, 29))
+
+    def test_driver_missed_and_error_are_logged(self):
+        class Fake(Driver):
+            def __init__(self, result): self.result = result
+            def dispense_one(self, pill):
+                if isinstance(self.result, Exception): raise self.result
+                return self.result
+        r = Dispenser(Fake(False)).dispense("pill1")
+        self.assertEqual((r["status"], r["remaining"]), ("missed", 30))
+        r = Dispenser(Fake(DispenseError("jam"))).dispense("pill1")
+        self.assertEqual(r["status"], "error")
+        self.assertEqual([h["status"] for h in storage.get_history()[:2]], ["error", "missed"])
 
     def test_next_dose(self):
         now = datetime(2026, 1, 1, 10, 0)
