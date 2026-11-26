@@ -18,7 +18,7 @@ command -v sudo >/dev/null || fail "sudo is required."
 # 2. System packages
 echo "==> Installing system packages"
 sudo apt-get update -qq
-sudo apt-get install -y -qq python3-venv python3-pip curl \
+sudo apt-get install -y -qq python3-venv python3-pip curl tesseract-ocr tesseract-ocr-eng \
   || fail "apt install failed. Check the internet connection and run ./install.sh again."
 
 # 3. Python environment

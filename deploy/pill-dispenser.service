@@ -7,6 +7,8 @@ Type=simple
 User=@USER@
 WorkingDirectory=@REPO@
 Environment=PILL_PORT=@PORT@
+# Optional extra settings (e.g. PILL_NTFY_URL=...), one per line:
+EnvironmentFile=-@REPO@/data/pill.env
 ExecStart=@REPO@/venv/bin/python -m app.app
 Restart=always
 RestartSec=3

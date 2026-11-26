@@ -2,95 +2,172 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#0b0f14">
 <title>Pill Dispenser</title>
 <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 <script defer src="{{ url_for('static', filename='app.js') }}"></script>
 <script defer src="{{ url_for('static', filename='alpine.min.js') }}"></script>
 </head>
-<body x-data="dispenser()" x-init="init()" x-cloak>
+<body x-data="dispenser()" x-init="init()" x-cloak :class="{alarming: state.alarm}">
 
 <header>
   <div class="clock" x-text="clock"></div>
-  <div class="status" :class="{err: offline}" x-text="offline ? 'Connection lost…' : (state.busy ? 'Dispensing…' : 'Ready')"></div>
-  <span class="sim" x-show="state.driver === 'sim'">SIMULATION</span>
+  <div class="status" :class="{err: offline || state.alarm}"
+       x-text="offline ? 'Connection lost…' : state.alarm ? 'ALARM: take your pills' : (state.busy ? 'Dispensing…' : 'Ready')"></div>
+  <span class="sim" x-show="state.driver === 'sim'">SIM</span>
+  <button class="bell" @click="openNotes()" aria-label="Notifications">
+    🔔<span class="badge" x-show="state.unread" x-text="state.unread"></span>
+  </button>
 </header>
 
 <main>
-  <!-- HOME -->
+  <!-- ================= HOME ================= -->
   <section x-show="tab==='home'">
+    <template x-for="d in state.pending" :key="d.id">
+      <div class="card waiting" :class="{loud: d.level >= 2}" :style="{'--c': color(d.pill)}">
+        <div class="label" x-text="d.level >= 2 ? 'Not taken yet!' : 'Waiting in the cup'"></div>
+        <div class="big"><span class="dot" :style="{background: color(d.pill)}"></span>
+          <span x-text="d.qty + ' × ' + d.name"></span></div>
+        <div class="muted" x-text="'Dispensed at ' + d.ts.slice(11,16)"></div>
+        <div class="btns">
+          <button class="primary" @click="doseAction(d, 'taken')">✓ I took it</button>
+          <button @click="ask('Skip this dose?', d.name + ' will be logged as skipped.', 'Skip', () => doseAction(d, 'skip'))">Skip</button>
+        </div>
+      </div>
+    </template>
+
     <div class="card next">
       <div class="label">Next dose</div>
       <template x-if="state.next">
         <div class="big">
           <span x-text="nextLabel()"></span>
-          <span class="dot" :style="{background: pill(state.next.pill).color}"></span>
-          <span x-text="pill(state.next.pill).name"></span>
+          <span class="dot" :style="{background: color(state.next.pill)}"></span>
+          <span x-text="state.next.qty + ' × ' + label(state.next.pill)"></span>
         </div>
       </template>
       <div class="big muted" x-show="!state.next">Nothing scheduled</div>
     </div>
+
+    <template x-for="c in state.containers.filter(c => c.refill_due)" :key="'r'+c.id">
+      <div class="card warnbar" @click="go('meds')">
+        ⚠ <b x-text="c.label"></b>: <span x-text="c.remaining + ' left' + (c.days_left !== null ? ' (~' + c.days_left + ' days)' : '')"></span>. Refill soon.
+      </div>
+    </template>
+
     <div class="grid3">
-      <template x-for="p in state.pills" :key="p.id">
-        <button class="pillbtn" :style="{'--c': p.color}"
-                :disabled="state.busy || p.remaining <= 0"
-                @click="ask('Dispense ' + p.name + '?', 'One ' + p.name + ' pill will be dispensed now.', 'Dispense', () => dispense(p.id))">
-          <span class="name" x-text="p.name"></span>
+      <template x-for="c in state.containers" :key="c.id">
+        <button class="pillbtn" :style="{'--c': c.color}"
+                :disabled="state.busy || c.remaining <= 0"
+                @click="ask('Dispense ' + c.label + '?', 'One pill will be dispensed now.', 'Dispense', () => dispense(c.id))">
+          <span class="name" x-text="c.label"></span>
           <span class="action">Dispense Now</span>
-          <span class="left" :class="{low: p.low}" x-text="p.remaining <= 0 ? 'EMPTY' : p.remaining + ' left'"></span>
+          <span class="left" :class="{low: c.refill_due}" x-text="c.remaining <= 0 ? 'EMPTY' : c.remaining + ' left'"></span>
         </button>
       </template>
     </div>
   </section>
 
-  <!-- SCHEDULE -->
+  <!-- ================= SCHEDULE ================= -->
   <section x-show="tab==='schedule'">
     <button class="primary wide" @click="openEditor(null)">+ Add time</button>
     <p class="muted center" x-show="!state.schedule.length">No times yet.</p>
     <template x-for="e in state.schedule" :key="e.id">
       <div class="row" :class="{off: !e.enabled}">
         <div class="time" x-text="e.time"></div>
-        <div class="who"><span class="dot" :style="{background: pill(e.pill).color}"></span><span x-text="pill(e.pill).name"></span></div>
+        <div class="who">
+          <span class="dot" :style="{background: color(e.pill)}"></span>
+          <div>
+            <div x-text="e.qty + ' × ' + label(e.pill)"></div>
+            <div class="muted small" x-text="daysText(e.days)"></div>
+          </div>
+        </div>
         <button class="small" @click="toggle(e)" x-text="e.enabled ? 'On' : 'Off'" :class="{on: e.enabled}"></button>
         <button class="small" @click="openEditor(e)">Edit</button>
-        <button class="small danger" @click="ask('Delete ' + e.time + '?', pill(e.pill).name + ' at ' + e.time + ' will be removed.', 'Delete', () => remove(e))">Delete</button>
+        <button class="small danger" @click="ask('Delete ' + e.time + '?', label(e.pill) + ' at ' + e.time + ' will be removed.', 'Delete', () => remove(e))">✕</button>
       </div>
     </template>
   </section>
 
-  <!-- HISTORY -->
+  <!-- ================= MEDS ================= -->
+  <section x-show="tab==='meds'">
+    <template x-for="c in state.containers" :key="c.id">
+      <div class="card med" :style="{'--c': c.color}">
+        <div class="medhead">
+          <span class="dot" :style="{background: c.color}"></span>
+          <div class="grow">
+            <div class="name" x-text="c.label"></div>
+            <div class="muted small" x-text="c.rx.instructions || (c.rx.name ? '' : 'No prescription set')"></div>
+          </div>
+        </div>
+        <div class="stats">
+          <div><b x-text="c.remaining"></b><span>left</span></div>
+          <div><b x-text="c.used"></b><span>used</span></div>
+          <div><b x-text="c.days_left !== null ? c.days_left : '–'"></b><span>days</span></div>
+          <div><b x-text="c.rx.refills_left"></b><span>refills</span></div>
+        </div>
+        <div class="bar"><div :style="{width: Math.min(100, 100 * c.remaining / Math.max(1, c.rx.quantity)) + '%'}"></div></div>
+        <div class="muted small" x-show="c.refill_due" style="color: var(--warn)">
+          Running low<span x-show="c.runs_out" x-text="', runs out about ' + c.runs_out"></span>.
+        </div>
+        <div class="btns wrap">
+          <button class="small" @click="openRx(c)">Edit</button>
+          <button class="small" :disabled="!state.ocr || scanning" @click="pickImage(c)"
+                  x-text="scanning === c.id ? 'Reading…' : '📷 Scan label'"></button>
+          <button class="small" @click="adjust(c, -1)">−1</button>
+          <button class="small" @click="adjust(c, 1)">+1</button>
+          <button class="primary small" @click="openRefill(c)">Refill</button>
+        </div>
+      </div>
+    </template>
+    <p class="muted center small" x-show="!state.ocr">Label scanning needs OCR on the Pi: sudo apt install tesseract-ocr</p>
+    <input type="file" accept="image/*" capture="environment" x-ref="file" hidden @change="scanPicked($event)">
+  </section>
+
+  <!-- ================= HISTORY ================= -->
   <section x-show="tab==='history'">
-    <p class="muted center" x-show="!history.length">Nothing dispensed yet.</p>
-    <template x-for="h in history" :key="h.ts + h.pill">
+    <p class="muted center" x-show="!history.length">Nothing yet.</p>
+    <template x-for="(h, i) in history" :key="i">
       <div class="row">
         <div class="time small-time" x-text="fmt(h.ts)"></div>
-        <div class="who"><span class="dot" :style="{background: pill(h.pill).color}"></span><span x-text="h.name"></span></div>
+        <div class="who"><span class="dot" :style="{background: color(h.pill)}"></span><span x-text="h.name"></span></div>
         <div class="tag" :class="h.status" x-text="statusText(h)"></div>
       </div>
     </template>
   </section>
 
-  <!-- SETTINGS -->
+  <!-- ================= SETTINGS ================= -->
   <section x-show="tab==='settings'">
-    <template x-for="p in state.pills" :key="p.id">
-      <div class="card setting" :style="{'--c': p.color}">
-        <div class="who"><span class="dot" :style="{background: p.color}"></span><span class="name" x-text="p.name"></span></div>
-        <div class="count" :class="{low: p.low}"><span x-text="p.remaining"></span> / <span x-text="p.capacity"></span></div>
-        <div class="bar"><div :style="{width: Math.min(100, 100 * p.remaining / p.capacity) + '%'}"></div></div>
-        <div class="btns">
-          <button class="small" @click="setCount(p, p.remaining - 1)">−1</button>
-          <button class="small" @click="setCount(p, p.remaining + 1)">+1</button>
-          <button class="primary" @click="ask('Refill ' + p.name + '?', 'Counter will be set to ' + p.capacity + '. Only confirm after the container is really full.', 'Refill', () => setCount(p, p.capacity))">Refill</button>
-        </div>
+    <div class="card form">
+      <h3>Reminders</h3>
+      <label>Refill reminder at <input type="time" x-model="settingsForm.refill_reminder_time"></label>
+      <label>Warn when this many days are left <input type="number" min="0" max="60" x-model.number="settingsForm.refill_warn_days"></label>
+      <label>Beep again after (min) <input type="number" min="1" x-model.number="settingsForm.remind_after_min"></label>
+      <label>Alarm after (min) <input type="number" min="1" x-model.number="settingsForm.alarm_after_min"></label>
+      <label>Mark "not taken" after (min) <input type="number" min="5" x-model.number="settingsForm.missed_after_min"></label>
+      <button class="primary wide" @click="saveSettings()">Save</button>
+    </div>
+    <div class="card form">
+      <h3>This phone</h3>
+      <label class="check"><input type="checkbox" x-model="soundOn" @change="saveLocal()"> Play sounds on this device when pills are ready</label>
+      <button class="wide" @click="enableBrowserNotes()" x-text="noteButton()"></button>
+      <p class="muted small">Phone alerts only work while this page is open. For alerts when it's closed, set up ntfy (see README)<span x-show="state.push">: ntfy is ON</span>.</p>
+    </div>
+    <div class="card form">
+      <h3>Tests</h3>
+      <div class="btns">
+        <button @click="post('/api/test/beep'); beep('dose'); say('Beep sent')">Test speaker</button>
+        <button @click="post('/api/test/notify'); say('Notification sent')">Test notification</button>
       </div>
-    </template>
-    <p class="muted center">Class prototype. Not for real medication.</p>
+      <p class="muted small">Driver: <span x-text="state.driver"></span>. OCR: <span x-text="state.ocr ? 'ready' : 'not installed'"></span>.</p>
+    </div>
+    <p class="muted center small">Class prototype. Not for real medication.</p>
   </section>
 </main>
 
 <nav>
-  <template x-for="t in [['home','Home'],['schedule','Schedule'],['history','History'],['settings','Settings']]" :key="t[0]">
-    <button :class="{active: tab===t[0]}" @click="go(t[0])" x-text="t[1]"></button>
+  <template x-for="t in tabs" :key="t[0]">
+    <button :class="{active: tab===t[0]}" @click="go(t[0])"><span x-text="t[1]"></span></button>
   </template>
 </nav>
 
@@ -106,8 +183,19 @@
           <div><button @click="step('m', 5)">▲</button><div class="num" x-text="pad(editor.m)"></div><button @click="step('m', -5)">▼</button></div>
         </div>
         <div class="choose">
-          <template x-for="p in state.pills" :key="p.id">
-            <button :style="{'--c': p.color}" :class="{sel: editor.pill===p.id}" @click="editor.pill=p.id" x-text="p.name"></button>
+          <template x-for="c in state.containers" :key="c.id">
+            <button :style="{'--c': c.color}" :class="{sel: editor.pill===c.id}" @click="editor.pill=c.id; editor.qty = c.rx.dose_qty" x-text="c.label"></button>
+          </template>
+        </div>
+        <div class="qty">
+          <span>Pills per dose</span>
+          <button class="small" @click="editor.qty = Math.max(1, editor.qty - 1)">−</button>
+          <b x-text="editor.qty"></b>
+          <button class="small" @click="editor.qty = Math.min(10, editor.qty + 1)">+</button>
+        </div>
+        <div class="days">
+          <template x-for="(d, i) in dayNames" :key="i">
+            <button class="small" :class="{sel: editor.days.includes(i)}" @click="toggleDay(i)" x-text="d"></button>
           </template>
         </div>
         <div class="btns">
@@ -116,6 +204,81 @@
         </div>
       </div>
     </template>
+  </div>
+</div>
+
+<!-- prescription editor (also shows scan results) -->
+<div class="overlay" x-show="rx" @click.self="rx=null">
+  <div class="modal" x-show="rx">
+    <template x-if="rx">
+      <div class="form">
+        <h2 x-text="rx.scan ? 'Check the scanned label' : 'Prescription'"></h2>
+        <template x-if="rx.scan">
+          <div class="scaninfo">
+            <template x-for="w in rx.scan.warnings"><div class="warnline" x-text="'⚠ ' + w"></div></template>
+            <div class="muted small" x-show="!rx.scan.warnings.length">Read OK. Check every field before saving.</div>
+          </div>
+        </template>
+        <label>Medication <input x-model="rx.f.name" placeholder="e.g. Metformin"></label>
+        <label>Strength <input x-model="rx.f.strength" placeholder="e.g. 500 mg"></label>
+        <label>Directions <textarea rows="2" x-model="rx.f.instructions"></textarea></label>
+        <div class="two">
+          <label>Pills per dose <input type="number" min="1" x-model.number="rx.f.dose_qty"></label>
+          <label>Qty per fill <input type="number" min="0" x-model.number="rx.f.quantity"></label>
+        </div>
+        <div class="two">
+          <label>Pills left now <input type="number" min="0" x-model.number="rx.f.remaining"></label>
+          <label>Refills left <input type="number" min="0" x-model.number="rx.f.refills_left"></label>
+        </div>
+        <label>Rx number <input x-model="rx.f.rx_number"></label>
+        <label>Prescriber <input x-model="rx.f.prescriber"></label>
+        <label>Pharmacy <input x-model="rx.f.pharmacy"></label>
+        <label>Filled on <input x-model="rx.f.filled_on" placeholder="YYYY-MM-DD"></label>
+        <template x-if="rx.scan && rx.scan.times.length">
+          <label class="check"><input type="checkbox" x-model="rx.applyTimes">
+            <span x-text="'Replace this container\'s schedule with ' + rx.scan.times.join(', ')"></span></label>
+        </template>
+        <details x-show="rx.scan" class="small"><summary>Text read from the label</summary><pre x-text="rx.scan && rx.scan.text"></pre></details>
+        <div class="btns">
+          <button @click="rx=null">Cancel</button>
+          <button class="primary" @click="saveRx()">Save</button>
+        </div>
+      </div>
+    </template>
+  </div>
+</div>
+
+<!-- refill -->
+<div class="overlay" x-show="refill" @click.self="refill=null">
+  <div class="modal" x-show="refill">
+    <template x-if="refill">
+      <div class="form">
+        <h2 x-text="'Refill ' + refill.label"></h2>
+        <label>Pills now in the container <input type="number" min="0" x-model.number="refill.count"></label>
+        <label class="check" x-show="refill.refills_left > 0"><input type="checkbox" x-model="refill.use_refill">
+          <span x-text="'This was a pharmacy refill (' + refill.refills_left + ' left → ' + (refill.refills_left - 1) + ')'"></span></label>
+        <p class="muted small">Only confirm once the container is really filled.</p>
+        <div class="btns">
+          <button @click="refill=null">Cancel</button>
+          <button class="primary" @click="saveRefill()">Refill</button>
+        </div>
+      </div>
+    </template>
+  </div>
+</div>
+
+<!-- notifications -->
+<div class="overlay" x-show="notesOpen" @click.self="notesOpen=false">
+  <div class="modal" x-show="notesOpen">
+    <h2>Notifications</h2>
+    <p class="muted" x-show="!notes.length">Nothing yet.</p>
+    <template x-for="n in notes" :key="n.id">
+      <div class="note" :class="[n.kind, {unread: !n.read}]">
+        <div class="ntitle"><b x-text="n.title"></b><span class="muted small" x-text="fmt(n.ts)"></span></div>
+        <div x-text="n.message"></div>
+      </div>
+    </template>
+    <div class="btns"><button class="primary" @click="notesOpen=false">Close</button></div>
   </div>
 </div>
 

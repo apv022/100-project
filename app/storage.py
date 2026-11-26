@@ -9,6 +9,7 @@ import threading
 import config
 
 _lock = threading.RLock()
+lock = _lock  # public: hold it for multi-step read-modify-write
 
 
 def _path(name):
@@ -68,9 +69,5 @@ def add_history(entry):
     update("history", [], add)
 
 
-def get_inventory():
-    """Pills remaining per container. New containers start full."""
-    inv = read("inventory", {})
-    for p in config.PILLS:
-        inv.setdefault(p["id"], p["capacity"])
-    return inv
+def get_settings():
+    return {**config.DEFAULT_SETTINGS, **read("settings", {})}

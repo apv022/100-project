@@ -5,8 +5,8 @@ import threading
 from datetime import datetime
 
 import config
-from . import storage
-from .hardware import DispenseError, make_driver
+from . import notify, prescriptions, storage
+from .hardware import DispenseError, make_driver, safe
 
 log = logging.getLogger("dispenser")
 
@@ -17,7 +17,7 @@ class Dispenser:
     def __init__(self, driver=None):
         self._lock = threading.Lock()
         self._driver = driver
-        self.active = None  # pill id currently being dispensed
+        self.active = None  # container id currently being dispensed
 
     @property
     def driver(self):
@@ -28,44 +28,47 @@ class Dispenser:
     def dispense(self, pill_id, source="manual", wait=False):
         """Dispense one pill. Returns {"ok", "status", "message", "remaining"}.
 
-        status: ok | busy | empty | missed | error | unknown
+        status: ok | busy | empty | no_pill | error | unknown
         wait=False returns "busy" at once if another dispense is running;
         wait=True (scheduler) queues behind it."""
         pill = PILLS.get(pill_id)
         if pill is None:
-            return _result(False, "unknown", "Unknown pill.")
+            return _result(False, "unknown", "Unknown container.")
         if not self._lock.acquire(blocking=wait):
             return _result(False, "busy", "Dispenser is busy, try again in a moment.")
         try:
             self.active = pill_id
-            remaining = storage.get_inventory()[pill_id]
+            name = prescriptions.label(pill_id)
+            remaining = prescriptions.get(pill_id)["remaining"]
             if remaining <= 0:
-                _log(pill, source, "empty")
-                return _result(False, "empty", f"{pill['name']} container is empty.", 0)
+                log_event(pill_id, source, "empty")
+                notify.add("empty", f"{name} is empty", f"Could not dispense {name}: the container is empty.")
+                return _result(False, "empty", f"{name} container is empty.", 0)
             try:
                 dropped = self.driver.dispense_one(pill)
             except Exception as exc:  # DispenseError or anything unexpected
                 if not isinstance(exc, DispenseError):
                     log.exception("dispense failed")
-                _log(pill, source, "error")
+                log_event(pill_id, source, "error")
+                safe(self.driver.beep, "error")
+                notify.add("error", "Dispenser problem", f"{name}: {exc}")
                 return _result(False, "error", f"Hardware error: {exc}", remaining)
             if not dropped:
-                _log(pill, source, "missed")
-                return _result(False, "missed", f"No {pill['name']} came out. Check the container.", remaining)
-            remaining -= 1
-            storage.update("inventory", {}, lambda inv: {**storage.get_inventory(), pill_id: remaining})
-            _log(pill, source, "ok")
-            return _result(True, "ok", f"{pill['name']} dispensed.", remaining)
+                log_event(pill_id, source, "no_pill")
+                return _result(False, "no_pill", f"No {name} came out. Check the container.", remaining)
+            remaining = prescriptions.consume(pill_id)
+            log_event(pill_id, source, "ok")
+            return _result(True, "ok", f"{name} dispensed.", remaining)
         finally:
             self.active = None
             self._lock.release()
 
 
-def _log(pill, source, status):
+def log_event(pill_id, source, status, **extra):
     storage.add_history({
         "ts": datetime.now().isoformat(timespec="seconds"),
-        "pill": pill["id"], "name": pill["name"],
-        "source": source, "status": status,
+        "pill": pill_id, "name": prescriptions.label(pill_id),
+        "source": source, "status": status, **extra,
     })
 
 
